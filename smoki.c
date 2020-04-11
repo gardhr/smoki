@@ -32,13 +32,12 @@ int toss(void)
  enum { size = 512 };
  typedef unsigned long ulong;
  static ulong buffer[size];
- urandom(buffer, size);
- static ulong index = 0;
- static ulong bits = 0;
- if(++bits == CHAR_BIT)
+ static ulong index = size;
+ static ulong bits = CHAR_BIT;
+ if(++bits >= CHAR_BIT)
  {
   bits = 0;
-  if(++index == size)
+  if(++index >= size)
   {
    index = 0;
    urandom(buffer, size);
@@ -189,5 +188,3 @@ int main(int argc, char** argv)
  puts("Done!"); 
  return 0; 
 }
-
-
