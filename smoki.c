@@ -142,7 +142,7 @@ void test(char* text)
   pad(&input, ++length);
  puts("Initial shared state:");
  binp(input);
- block hints = block_clone(int, input);
+ block hints = block_make(int, length);
  block biased = block_make(int, length);
  block random = block_make(int, length);
  unsigned char message = randlong();
@@ -160,21 +160,24 @@ void test(char* text)
   int send = bitbox & 1;
   bitbox >>= 1;
   if(send)
+  {
    transform(input, biased, &input);
+   xor(biased, hints, &hints);  
+  }
   else
+  {
    transform(input, random, &input); 
+   xor(random, hints, &hints);  
+  }
   showl(send);
   puts("Shared state:");
   binp(input); 
   if(send)
    received |= msb;
   msb <<= 1;
-  xor(input, hints, &hints);
   puts("Hints:");
   binp(hints);
  }
- puts("Final shared state:");
- binp(input);
  showl(received);
  block_free(input);
  block_free(hints);  
