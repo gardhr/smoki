@@ -87,7 +87,7 @@ void randomize(block* binary)
 {
  size_t length = binary->length;
  for(size_t index = 0; index < length; ++index)
-  block_set(int, *binary, index, rand()&1);
+  block_set(int, *binary, index, toss());
 }
 
 void randomize_biased(block* binary)
