@@ -1,2 +1,3 @@
 # smoki
-Probablistic connections (proof of concept)
+Probability experiments
+
