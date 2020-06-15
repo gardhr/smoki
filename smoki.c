@@ -1,4 +1,9 @@
-#include <stdio.h> 
+/*
+
+*/
+
+
+#include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <limits.h>
@@ -16,7 +21,7 @@ void urandom(void* buffer, size_t size)
 {
  static FILE* stream = NULL;
  if(!stream)
-  stream = fopen("/dev/urandom", "rb"); 
+  stream = fopen("/dev/urandom", "rb");
  fread(buffer, 1, size, stream);
 }
 
@@ -24,7 +29,7 @@ long randlong(void)
 {
  long word;
  urandom(&word, sizeof(long));
- return word; 
+ return word;
 }
 
 int toss(void)
@@ -36,12 +41,12 @@ int toss(void)
  static ulong bits = CHAR_BIT;
  if(++bits >= CHAR_BIT)
  {
-  bits = 0;
-  if(++index >= size)
-  {
-   index = 0;
-   urandom(buffer, size);
-  }
+   bits = 0;
+   if(++index >= size)
+   {
+    index = 0;
+    urandom(buffer, size);
+   }
  }
  int flip = buffer[index] & 1;
  buffer[index] >>= 1;
@@ -90,36 +95,9 @@ void randomize(block* binary)
   block_set(int, *binary, index, toss());
 }
 
-void randomize_biased(block* binary)
-{
- size_t length = binary->length;
- for(size_t index = 0; index < length; ++index)
- {
-  if(!(randlong() % 3))
-  {
-   int state = block_get(int, *binary, index);
-   block_set(int, *binary, index, !state);
-  }  
- }
-}
-
-void increment(block* binary)
-{
- int carry = 1;
- size_t length = binary->length;
- for(size_t index = 0; index < length; ++index)
- {
-  int send = block_get(int, *binary, index);
-  int sum = send + carry;
-  carry = (sum > 1);
-  sum &= 1;
-  block_set(int, *binary, index, sum);
- }
-}
-
 void xor(block identity, block signature, block* result)
 {
- size_t length = identity.length; 
+ size_t length = identity.length;
  block_resize(int, *result, length);
  for(size_t index = 0; index < length; ++index)
  {
@@ -128,23 +106,60 @@ void xor(block identity, block signature, block* result)
  }
 }
 
-void transform(block identity, block signature, block* result)
+void rotate(block* binary)
 {
- xor(identity, signature, result);
- increment(result); 
+ int last;
+ size_t length = binary->length;
+ for(size_t index = 0; index < length; ++index)
+ {
+  int bit = block_get(int, *binary, index);
+  block_set(int, *binary, index, last);
+  last = bit;
+ }
+ block_set(int, *binary, 0, last);
+}
+
+void transform(block* identity, block signature)
+{
+ rotate(identity);
+ xor(signature, *identity, identity);
+}
+
+double score(block lhs, block rhs)
+{
+ size_t matches = 0;
+ size_t count = lhs.length;
+ for(size_t index = 0; index < count; ++index)
+  if(block_get(int, lhs, index) == block_get(int, rhs, index))
+   ++matches;
+ return (double)matches / count;
+}
+
+double randomize_bracket(block* buffer, block comparison, double low, double high)
+{
+ for(;;)
+ {
+  randomize(buffer);
+  double mark = score(*buffer, comparison);
+  if(mark > low && mark < high)
+   return mark;
+ }
+ return 0;
 }
 
 void test(char* text)
 {
- block input = text_to_binary(text);
- size_t length = input.length;
+ puts(text);
+ block send_key = text_to_binary(text);
+ size_t length = send_key.length;
  if(length & 1)
-  pad(&input, ++length);
+  pad(&send_key, ++length);
+ block receive_key = block_clone(int, send_key);
  puts("Initial shared state:");
- binp(input);
+ binp(send_key);
  block hints = block_make(int, length);
- block biased = block_make(int, length);
- block random = block_make(int, length);
+ block more_similar = block_make(int, length);
+ block less_similar = block_make(int, length);
  unsigned char message = randlong();
  const size_t bits = CHAR_BIT;
  showl(message);
@@ -152,47 +167,59 @@ void test(char* text)
  long msb = 1;
  long received = 0;
  size_t count = bits;
+ double average = 0.5;
+ double roam = 0.05;
  while(count--)
- {  
-  block_copy(int, input, biased);
-  randomize_biased(&biased);
-  randomize(&random);
-  int send = bitbox & 1;
+ { 
+// SEND
+
+/* Create two equally-biased random distributions */
+  randomize_bracket(&more_similar, send_key, average, average + roam);
+  randomize_bracket(&less_similar, send_key, average - roam, average);
+  showd(score(send_key, less_similar));
+  showd(score(send_key, more_similar));
+/* If the bit is 1, send the first sequence */
+  int bit = bitbox & 1;
   bitbox >>= 1;
-  if(send)
+  if(bit)
   {
-   transform(input, biased, &input);
-   xor(biased, hints, &hints);  
+   transform(&send_key, more_similar);
+   xor(more_similar, hints, &hints);    
   }
   else
   {
-   transform(input, random, &input); 
-   xor(random, hints, &hints);  
+   transform(&send_key, less_similar);
+   xor(less_similar, hints, &hints); 
   }
-  showl(send);
+
+// RECEIVE
+
+/* If the bit is 1, send the first sequence */
+ //double grade = score();
+  showl(bit);
   puts("Shared state:");
-  binp(input); 
-  if(send)
+  binp(send_key);
+  if(bit)
    received |= msb;
   msb <<= 1;
   puts("Hints:");
   binp(hints);
  }
  showl(received);
- block_free(input);
- block_free(hints);  
- block_free(biased); 
- block_free(random); 
+ showb(received == message);
+ block_free(send_key);
+ block_free(hints); 
+ block_free(more_similar);
+ block_free(less_similar);
 }
 
 int main(int argc, char** argv)
 {
- srand(time(0));
- puts("- Smoki -"); 
+ puts("- Smoki -");
  if(argc == 1)
   test(*argv);
  else while(*(++argv))
   test(*argv);
- puts("Done!"); 
- return 0; 
+ puts("Done!");
+ return 0;
 }
